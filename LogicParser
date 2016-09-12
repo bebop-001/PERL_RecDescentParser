@@ -1,0 +1,60 @@
+#!/usr/bin/perl -w
+use strict;
+use warnings;
+use utf8;
+use Cwd 'abs_path';
+use Encode;
+$|++;
+
+# Begin for require so symbols loaded at start for debugger.
+BEGIN {
+    use lib "$ENV{HOME}/bin/perl";
+    require LogicParser;
+}
+
+my ($FuncDir, $FuncName);
+BEGIN {
+    ($FuncDir, $FuncName) = (abs_path($0) =~ m{^(.*)/(.*$)});
+}
+
+# set STDIN/STDOUT and ARGV to utf8.
+binmode(STDOUT, ':utf8');
+binmode(STDIN, ':utf8');
+
+my $USAGE = "usage: $FuncName expression
+This tool is used to demonstrate LogicParser.pm.  It parses an expression
+from the comand line and allows you to exercise it.
+
+An example of an expression might be \"( a OR b AND ( c OR d ) )\".
+After starting the program you are prompted for input arguments.
+Arguments entered at this point are cnsidered true and the expression
+is evaluated.  For instance, with the expression above, if you entered
+\"b d\" the program would print \"TRUE\".
+
+Note that parens are special characters for borne shell and so may
+need to be escaped, depending on your platform.
+
+Operators supported are (, ), AND, OR, NOT, XOR.  Evaluation is 
+left to right and all operators have the same precidence.  Use the
+parens to control grouping.
+";
+
+die $USAGE unless @ARGV;
+
+
+print "Equation = \"", join(' ', @ARGV), "\"\n";
+my $found_operands;
+eval {$found_operands = Evaluate('-o', [@ARGV], []); };
+die "Equation parse failed: $@\n" if ($@);
+print ("Found operands:", join(', ', map{"\"$_\""} @$found_operands), "\n");
+
+my $in;
+do {
+    print "Input key values > ";
+    chomp($in = <STDIN>);
+    if($in) {
+        print(((Evaluate([@ARGV], [$in =~ m{(\S+)}g]))
+            ? 'TRUE' : 'FALSE'), "\n");
+    }
+} while $in;
+
