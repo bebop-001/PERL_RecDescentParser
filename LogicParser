@@ -4,19 +4,13 @@ use warnings;
 use utf8;
 use Cwd 'abs_path';
 use Encode;
-$|++;
-
-# Begin for require so symbols loaded at start for debugger.
-BEGIN {
-    use lib "$ENV{HOME}/bin/perl";
-    require LogicParser;
-}
-
 my ($FuncDir, $FuncName);
 BEGIN {
     ($FuncDir, $FuncName) = (abs_path($0) =~ m{^(.*)/(.*$)});
+    @INC = ($FuncDir, "$ENV{HOME}/bin/perl", @INC);
+    require LogicParser;
 }
-
+$|++;
 # set STDIN/STDOUT and ARGV to utf8.
 binmode(STDOUT, ':utf8');
 binmode(STDIN, ':utf8');

@@ -1,0 +1,120 @@
+#!/usr/bin/perl -w
+use strict;
+use warnings;
+use Cwd 'abs_path';
+require LogicParser;
+my ($FuncDir, $FuncName);
+BEGIN {
+    use Cwd 'abs_path';
+    ($FuncDir, $FuncName) = (abs_path($0) =~ m{^(.*)/(.*$)});
+    # use lib seemed to have problems with $FuncDir so set @INC directly.
+    # $FuncDir is used so I can have symbolic link to the development
+    # version of this file in my regular bin directory and find the
+    # development version of LogicParser.pm which is in the same directory.
+    @INC = (@INC, abs_path("$FuncDir/.."), "$ENV{HOME}/bin/perl");
+}
+
+my @tests = (
+    {eqn => [qw( a ) ]
+        , results => [0, 1,], },
+    {eqn => [qw( a OR b ) ]
+        , results => [0, 1, 1, 1], },
+    {eqn => [qw( a AND b ) ]
+        , results => [0, 0, 0, 1], },
+    {eqn => [qw( a XOR b ) ]
+        , results => [0, 1, 1, 0], },
+    {eqn => [qw( a AND NOT b ) ]
+        , results => [0, 1, 0, 0], },
+    {eqn => [qw( NOT a AND b ) ]
+        , results => [0, 0, 1, 0], },
+    {eqn => [qw( ( a AND b ) ) ]
+        , results => [0, 0, 0, 1], },
+    {eqn => [qw( ( ( a AND b ) OR c ) ) ]
+        , results => [0, 0, 0, 1,1, 1, 1, 1], },
+    {eqn => [qw( ( A OR B ) AND C )]
+        , results => [0, 0,0,0,0,1,1,1,1,]},
+    {eqn => [qw( ( A OR B ) AND ( C OR D ))]
+        ,results => [0,0,0,0,0,1,1,1,0,1,1,1,0,1,1,1,1,]},
+    {eqn => [qw( ( A OR B ) XOR ( C OR D ))]
+        , results => [ 0,1,1,1,1,0,0,0,1,0,0,0,1,0,0,0,]},
+    {eqn => [qw( ( A OR B ) XOR NOT ( C OR D ))]
+        , results => [ 1,0,0,0,0,1,1,1,0,1,1,1,0,1,1,1,]},
+    {eqn => [qw( NOT ( A OR B ) XOR ( C OR D ))]
+        , results => [ 1,0,0,0,0,1,1,1,0,1,1,1,0,1,1,1,]},
+);
+
+
+sub DoTests ($) {
+    my $equation = shift @_;
+    my @tests = ([], ); # first test is all false.
+    my @operands = @{Evaluate('-o', $equation, [])};
+    # generate a test set based on the operands.
+    foreach my $value (1..(2 ** scalar(@operands)) - 1) {
+        my $op_idx = 0;
+        for(my $mask = 1; $mask <= $value; $mask *= 2) {
+            if ($value & $mask) {
+                push @{$tests[$value]}, $operands[$op_idx];
+            }
+            $op_idx++;
+        }
+    }
+
+    my @results;
+    foreach my $i (0..$#tests) {
+        my $test = $tests[$i];
+        my $result = Evaluate($equation, $test );
+        push @results, [ $result, @$test ];
+    }
+    return \@results, \@operands;
+}
+sub print_results ($$$$$) {
+    my ($idx, $eqn, $operands, $results, $expected) = @_;
+    print("$idx ===========\n  Equation: \" "
+        , join(' ', @$eqn, "\"\n")
+        , "  Operands : ", join(', ', map{"\"$_\""} @$operands)
+        , "\n");
+    my $bad_tests = 0;
+    foreach my $i (0..$#{$results}) {
+        my ($r, @t) = @{$results->[$i]};
+        my $e = $expected->[$i];
+        print(($e == $r) ? ' ' : '*');
+        printf(" test %2d %-30s %5s"
+            , $i, "( " . join(', ', map{"\"$_\""; } @t) . " )"
+            , (($r) ? 'TRUE' : 'FALSE'));
+        if ($e != $r) {
+            print(" should be ", (($e) ? 'TRUE' : 'FALSE'));
+            $bad_tests++;
+        }
+        print "\n";
+    }
+    return $bad_tests;
+}
+
+sub DoTestN($) {
+    my $i = shift @_;
+    my $test = $tests[$i];
+    my $equation = $test->{eqn};
+    my ($results, $operands) = DoTests($equation);
+    my  $failed
+        = print_results($i, $equation, $operands, $results, $test->{results});
+    print "  ************* $failed FAILED TESTS *************\n" if $failed;
+    return $failed;
+}
+
+
+if(@ARGV && @ARGV == 1 && $ARGV[0] =~ m{^\d+}) {
+    DoTestN($ARGV[0]);
+}
+else {
+    my $failed = 0;
+    foreach my $i (0..$#tests) {
+        my  $test_failed = DoTestN($i);
+        $failed++ if $test_failed;
+    }
+    if($failed) {
+        print "************* TOTAL $failed FAILED TESTS *************\n";
+    }
+    else {
+        print "ALL TESTS PASSED\n";
+    }
+}

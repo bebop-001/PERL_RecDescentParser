@@ -4,17 +4,17 @@ use strict;
 
 # The MIT License (MIT)
 # Copyright (c) 2016 Kana-Tutor (http://www.kana-tutor.com/)
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL THE
@@ -26,25 +26,28 @@ use strict;
 =head1 NAME
 LogicParser::Evaluate
 
-=head1 NAME
-require LogicParser;
+=head1 SYNOPSIS
 
-  # this function will c
-  # assign an equation and go into a loop where the user
-  # can input various operands and see the results.  Operands
-  # the user inputs are considered 'true'.
-  LogicParser::Evaluate
-  my $equation = [qw( ( a AND b ) OR ( c AND NOT d ) ) ];
-  my $operands = Evaluate('-o', $equation, []);
-  my $in;
-  do {
-      print "Input key values > ";
-      chomp($in = <STDIN>);
-      if($in) {
-          print(((Evaluate([@ARGV], [$in =~ m{(\S+)}g]))
-              ? 'TRUE' : 'FALSE'), "\n");
-      }
-  } while $in;
+=over
+
+ require LogicParser;
+ 
+ # this function assigns an equation and loops to allow the
+ # user to input tokens.  Any token the user inputs is 
+ # evaluated as 'true'.
+ my $equation = [qw( ( a AND b ) OR ( c AND NOT d ) ) ];
+ my $operands = Evaluate('-o', $equation, []);
+ my $in;
+ do {
+   print "Input key values > ";
+   chomp($in = <STDIN>);
+   if($in) {
+       print(((Evaluate([@ARGV], [$in =~ m{(\S+)}g]))
+           ? 'TRUE' : 'FALSE'), "\n");
+   }
+ } while $in;
+
+=back
 
 =head1 DESCRIPTION
 
@@ -53,6 +56,21 @@ evaluate logical values.  I use it for evaluating the results of
 a grep tool that allows conditional matches of variables.
 
 See LogicParser for an interactive perl script to exercise the fundtion.
+
+=head1 FUNCTIONS
+
+The library has only one  function: Evaluate();
+ my $result = Evaluate($equation, $values);
+ --- OR ---
+ my $operands = Evaluate('-o', $equation, $values);
+
+* $equation is a list ref containing the tokens that make up the equation.
+
+* $values is a list ref containing the operands the user wants evaluated
+as true.
+
+* if '-o' is set the function returns a list ref containing the
+operands from the language.
 
 =cut
 
@@ -83,39 +101,48 @@ sub Evaluate {
     # equation in, the result is 'true'.
     my %values = map {$_, 1} @$values;
     # Track {}'s so we can give an error if they aree unbalenced.
-    my $depth = 0; 
+    my $depth = 0;
     # an equation with more than 1 token and no operators is an error.
     my ($tokens_count, $operators_count);
     my ($evaluate, $evaluate_node);
+    # evaluate the equation.
     $evaluate = sub {
         my $token;     # Current token
         # Evaluate this node.
+        my $ACC;    # the accumulator.
+        # Evaluate a node.
         $evaluate_node = sub {
-            my $ACC;    # the accumulator.
             # Set this on encountering an '}'/
-            # Set $TERMINAL on encountering the terminal of a node.  For this
-            # language it's ')'.
+            # Set $TERMINAL on encountering the terminal of a node.
+            # For this language it's ')'.
             my $TERMINAL;
             # Each operator has an entry here where it gets evaluated.
             my %logic_tree = (
                 AND     => sub {
+                    my $L = $ACC;
                     my $R = $evaluate_node->();
-                    $ACC = ($ACC && $R);
-                    return $ACC;
+                    return ($L && $R);
                 },
                 OR      => sub {
+                    my $L = $ACC;
                     my $R = $evaluate_node->();
-                    $ACC = ($ACC || $R);
-                    return $ACC;
+                    return ($L || $R);
                 },
                 XOR      => sub {
+                    my $L = $ACC;
                     my $R = $evaluate_node->();
-                    $ACC = ($ACC ^ $R);
-                    return $ACC;
+                    return ($L ^ $R);
                 },
                 NOT     => sub {
-                    my $rv = $evaluate_node->();
-                    return (! $rv) || 0;
+                    my $op = shift @_;
+                    # bit of a kludge here...  If NOT is
+                    # the first token (i.e. ACC is empty),
+                    # we need to set ACC # so the next input
+                    # is returned instead of assigned to ACC.
+                    $ACC = $op unless defined $ACC;
+                    my $rv = (! $evaluate_node->()) || 0;
+                    $ACC = $rv if ($ACC eq $op);
+                    return $rv;
                 },
                 '('     => sub {
                     $depth++;
@@ -142,7 +169,7 @@ sub Evaluate {
                     if ($find_operands) {
                         $return_operands{$token}++;
                     }
-                    my  $rv = defined $values{$token} || 0;
+                    my $rv = defined $values{$token} || 0;
                     if (defined $ACC) {
                         return $rv;
                     }
@@ -154,15 +181,16 @@ sub Evaluate {
             }
             return $ACC;
         };
+        # Parsing starts here with a call to evaluate_node
         my $rv = $evaluate_node->();
         ERROR(__LINE__, "depth = $depth: too few close parens.") if $depth;
         return $rv;
     };
-    # As long as we have tokens, evaluate 'em.
+    # As long as we have tokens, continue evaluation.
     my $rv;
     while (defined $tokens->peek()) {
         $rv = $evaluate->();
-        # after last token, if we're operands if finding them.
+        # after last token, return true, valse or a list ref of operaands.
         if (!defined($tokens->peek())) {
             if ($tokens_count > 1 && ! $operators_count) {
                 ERROR(__LINE__, "$tokens_count tokens with no operators.");
